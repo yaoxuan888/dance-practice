@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>舞蹈跟练评分 v7</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ========== 启动页 ========== -->
+<div id="page-start" class="page active">
+  <div class="start-bg">
+    <div class="start-glow"></div>
+  </div>
+  <div class="start-content">
+    <div class="logo-area">
+      <div class="logo-icon">💃</div>
+      <h1 class="app-title">舞蹈跟练评分</h1>
+      <p class="app-subtitle">AI 姿态识别 · 体感跟练 · 实时打分</p>
+    </div>
+
+    <!-- 视频链接输入区（对话式入口） -->
+    <div class="url-input-section" id="urlInputSection">
+      <div class="url-input-label">🎬 粘贴教练示范视频链接，生成跟练入口</div>
+      <div class="url-input-row">
+        <input type="url" id="practiceVideoUrl" class="url-input"
+          placeholder="https://example.com/coach-demo.mp4" />
+        <button class="url-gen-btn" id="btnGenLink">生成链接</button>
+      </div>
+      <p class="url-input-hint">支持 MP4 / WebM 视频直链（需允许跨域访问）</p>
+
+      <!-- 生成的分享链接 -->
+      <div class="share-link-box hidden" id="shareLinkBox">
+        <div class="share-link-label">✅ 跟练链接已生成，复制后分享给他人：</div>
+        <div class="share-link-row">
+          <input type="text" class="share-link-input" id="shareLinkInput" readonly />
+          <button class="share-copy-btn" id="btnCopyLink">复制</button>
+        </div>
+        <button class="share-start-btn" id="btnStartFromUrl">▶ 直接开始跟练</button>
+      </div>
+    </div>
+
+    <div class="dance-list">
+      <h2 class="section-title">— 或选择内置舞曲 —</h2>
+      <div class="song-cards" id="songCards"></div>
+
+      <!-- 文件导入区 -->
+      <div class="import-section" id="importSection">
+        <label class="import-btn" id="importBtn">
+          <input type="file" id="videoInput" accept="video/mp4,video/webm,video/ogg,video/*" style="display:none" />
+          <span>📤 本地视频文件导入</span>
+        </label>
+        <p class="import-tip">上传本地教练视频，自动提取姿态 · 支持 MP4/WebM</p>
+
+        <!-- 导入进度 -->
+        <div class="import-progress hidden" id="importProgress">
+          <div class="import-progress-bar">
+            <div class="import-progress-fill" id="importProgressFill"></div>
+          </div>
+          <p class="import-progress-text" id="importProgressText">正在分析视频姿态…</p>
+        </div>
+
+        <!-- 导入的视频预览 -->
+        <div class="import-preview hidden" id="importPreview">
+          <div class="import-preview-info">
+            <span class="import-preview-name" id="importVideoName">video.mp4</span>
+            <span class="import-preview-duration" id="importVideoDuration">0s</span>
+            <span class="import-preview-frames" id="importVideoFrames">已提取 0 帧</span>
+          </div>
+          <button class="import-clear-btn" id="importClearBtn">✕ 清除</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-start" id="btnStart" disabled>开始跟练</button>
+    <p class="tip">📱 请允许摄像头权限以启用姿态评分</p>
+  </div>
+</div>
+
+<!-- ========== 跟练页 ========== -->
+<div id="page-practice" class="page">
+  <div class="practice-header">
+    <button class="btn-back" id="btnBack">‹ 返回</button>
+    <span class="song-name-header" id="songNameHeader"></span>
+    <div class="score-badge" id="scoreBadge">-- 分</div>
+  </div>
+
+  <!-- 视频区：PC左右分屏 / H5竖屏全屏+小窗 -->
+  <div class="video-area" id="videoArea">
+    <!-- 示范视频（PC左 / H5全屏背景） -->
+    <div class="demo-wrap" id="demoWrap">
+      <video id="demoVideo" playsinline muted loop preload="auto"></video>
+      <canvas id="demoSkeletonCanvas"></canvas>
+      <div class="demo-placeholder" id="demoPlaceholder">💃</div>
+      <div class="demo-label">示范</div>
+    </div>
+    <!-- 用户摄像头（PC右 / H5右下角小窗） -->
+    <div class="user-wrap" id="userWrap">
+      <video id="userVideo" autoplay playsinline muted></video>
+      <canvas id="userCanvas"></canvas>
+      <div class="user-label">你</div>
+      <div class="camera-hint" id="cameraHint"></div>
+    </div>
+  </div>
+
+  <!-- 实时分数条 -->
+  <div class="score-bar-area">
+    <div class="score-bar-bg">
+      <div class="score-bar-fill" id="scoreBarFill"></div>
+    </div>
+    <span class="score-text" id="scoreText">等待评分…</span>
+  </div>
+
+  <!-- 节拍可视化 -->
+  <div class="beat-row" id="beatRow">
+    <div class="beat-dot" id="b0"></div>
+    <div class="beat-dot" id="b1"></div>
+    <div class="beat-dot" id="b2"></div>
+    <div class="beat-dot" id="b3"></div>
+    <div class="beat-dot" id="b4"></div>
+    <div class="beat-dot" id="b5"></div>
+    <div class="beat-dot" id="b6"></div>
+    <div class="beat-dot" id="b7"></div>
+  </div>
+
+  <!-- 控制栏 -->
+  <div class="ctrl-bar">
+    <button class="ctrl-btn" id="btnCountdown">3s 倒计时</button>
+    <button class="ctrl-btn" id="btnPlayPause">▶ 播放</button>
+    <button class="ctrl-btn" id="btnRestart">↺ 重练</button>
+    <div class="tempo-area">
+      <span>速度</span>
+      <input type="range" id="tempoRange" min="0.5" max="1.5" step="0.05" value="1" />
+      <span id="tempoVal">1.0x</span>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 结果页 ========== -->
+<div id="page-result" class="page">
+  <div class="result-bg">
+    <canvas id="confettiCanvas"></canvas>
+  </div>
+  <div class="result-content">
+    <div class="result-emoji" id="resultEmoji">🎉</div>
+    <div class="result-grade" id="resultGrade">优秀</div>
+    <div class="result-score-wrap">
+      <span class="result-score" id="resultScore">0</span>
+      <span class="result-score-unit">分</span>
+    </div>
+    <div class="result-stats" id="resultStats"></div>
+    <div class="result-comment" id="resultComment"></div>
+    <div class="result-btns">
+      <button class="btn-retry" id="btnRetry">再练一次</button>
+      <button class="btn-home" id="btnHome">换首歌</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 加载遮罩 ========== -->
+<div id="loadingMask" class="loading-mask">
+  <div class="loading-spinner"></div>
+  <p id="loadingText">正在加载 AI 模型…</p>
+</div>
+
+<!-- ========== 倒计时遮罩 ========== -->
+<div id="countdownMask" class="countdown-mask hidden">
+  <div class="countdown-num" id="countdownNum">3</div>
+</div>
+
+<!-- TensorFlow.js & MoveNet -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
