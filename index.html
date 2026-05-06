@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>舞蹈跟练评分 v7</title>
+  <title>舞蹈跟练评分</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -20,25 +20,25 @@
       <p class="app-subtitle">AI 姿态识别 · 体感跟练 · 实时打分</p>
     </div>
 
-    <!-- 视频链接输入区（对话式入口） -->
-    <div class="url-input-section" id="urlInputSection">
-      <div class="url-input-label">🎬 粘贴教练示范视频链接，生成跟练入口</div>
-      <div class="url-input-row">
-        <input type="url" id="practiceVideoUrl" class="url-input"
-          placeholder="https://example.com/coach-demo.mp4" />
-        <button class="url-gen-btn" id="btnGenLink">生成链接</button>
+    <!-- 智能体对话引导区 -->
+    <div class="chat-section" id="chatSection">
+      <div class="chat-messages" id="chatMessages">
+        <!-- 消息会动态插入 -->
       </div>
-      <p class="url-input-hint">支持 MP4 / WebM 视频直链（需允许跨域访问）</p>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" class="chat-input" placeholder="粘贴视频链接，如 https://..." />
+        <button class="chat-send-btn" id="btnChatSend">发送</button>
+      </div>
+    </div>
 
-      <!-- 生成的分享链接 -->
-      <div class="share-link-box hidden" id="shareLinkBox">
-        <div class="share-link-label">✅ 跟练链接已生成，复制后分享给他人：</div>
-        <div class="share-link-row">
-          <input type="text" class="share-link-input" id="shareLinkInput" readonly />
-          <button class="share-copy-btn" id="btnCopyLink">复制</button>
-        </div>
-        <button class="share-start-btn" id="btnStartFromUrl">▶ 直接开始跟练</button>
+    <!-- 生成的分享链接（对话中触发显示） -->
+    <div class="share-link-box hidden" id="shareLinkBox">
+      <div class="share-link-label">✅ 跟练链接已生成，复制后分享给他人：</div>
+      <div class="share-link-row">
+        <input type="text" class="share-link-input" id="shareLinkInput" readonly />
+        <button class="share-copy-btn" id="btnCopyLink">复制</button>
       </div>
+      <button class="share-start-btn" id="btnStartFromUrl">▶ 直接开始跟练</button>
     </div>
 
     <div class="dance-list">
@@ -53,7 +53,6 @@
         </label>
         <p class="import-tip">上传本地教练视频，自动提取姿态 · 支持 MP4/WebM</p>
 
-        <!-- 导入进度 -->
         <div class="import-progress hidden" id="importProgress">
           <div class="import-progress-bar">
             <div class="import-progress-fill" id="importProgressFill"></div>
@@ -61,7 +60,6 @@
           <p class="import-progress-text" id="importProgressText">正在分析视频姿态…</p>
         </div>
 
-        <!-- 导入的视频预览 -->
         <div class="import-preview hidden" id="importPreview">
           <div class="import-preview-info">
             <span class="import-preview-name" id="importVideoName">video.mp4</span>
@@ -86,25 +84,22 @@
     <div class="score-badge" id="scoreBadge">-- 分</div>
   </div>
 
-  <!-- 视频区：PC左右分屏 / H5竖屏全屏+小窗 -->
   <div class="video-area" id="videoArea">
-    <!-- 示范视频（PC左 / H5全屏背景） -->
     <div class="demo-wrap" id="demoWrap">
-      <video id="demoVideo" playsinline muted loop preload="auto"></video>
+      <video id="demoVideo" playsinline webkit-playsinline muted loop preload="auto"></video>
       <canvas id="demoSkeletonCanvas"></canvas>
       <div class="demo-placeholder" id="demoPlaceholder">💃</div>
       <div class="demo-label">示范</div>
     </div>
-    <!-- 用户摄像头（PC右 / H5右下角小窗） -->
     <div class="user-wrap" id="userWrap">
-      <video id="userVideo" autoplay playsinline muted></video>
+      <div class="user-drag-handle"></div>
+      <video id="userVideo" autoplay playsinline webkit-playsinline muted></video>
       <canvas id="userCanvas"></canvas>
       <div class="user-label">你</div>
       <div class="camera-hint" id="cameraHint"></div>
     </div>
   </div>
 
-  <!-- 实时分数条 -->
   <div class="score-bar-area">
     <div class="score-bar-bg">
       <div class="score-bar-fill" id="scoreBarFill"></div>
@@ -112,19 +107,13 @@
     <span class="score-text" id="scoreText">等待评分…</span>
   </div>
 
-  <!-- 节拍可视化 -->
   <div class="beat-row" id="beatRow">
-    <div class="beat-dot" id="b0"></div>
-    <div class="beat-dot" id="b1"></div>
-    <div class="beat-dot" id="b2"></div>
-    <div class="beat-dot" id="b3"></div>
-    <div class="beat-dot" id="b4"></div>
-    <div class="beat-dot" id="b5"></div>
-    <div class="beat-dot" id="b6"></div>
-    <div class="beat-dot" id="b7"></div>
+    <div class="beat-dot"></div><div class="beat-dot"></div>
+    <div class="beat-dot"></div><div class="beat-dot"></div>
+    <div class="beat-dot"></div><div class="beat-dot"></div>
+    <div class="beat-dot"></div><div class="beat-dot"></div>
   </div>
 
-  <!-- 控制栏 -->
   <div class="ctrl-bar">
     <button class="ctrl-btn" id="btnCountdown">3s 倒计时</button>
     <button class="ctrl-btn" id="btnPlayPause">▶ 播放</button>
@@ -162,6 +151,7 @@
 <div id="loadingMask" class="loading-mask">
   <div class="loading-spinner"></div>
   <p id="loadingText">正在加载 AI 模型…</p>
+  <button class="loading-skip-btn hidden" id="loadingSkipBtn">跳过（无AI模式）</button>
 </div>
 
 <!-- ========== 倒计时遮罩 ========== -->
@@ -169,8 +159,11 @@
   <div class="countdown-num" id="countdownNum">3</div>
 </div>
 
-<!-- TensorFlow.js & MoveNet -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<!-- TensorFlow.js & MoveNet — 使用兼容性更好的版本和CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.17.0/dist/tf-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.17.0/dist/tf-converter.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0/dist/tf-backend-webgl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu@4.17.0/dist/tf-backend-cpu.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 <script src="app.js"></script>
 </body>
