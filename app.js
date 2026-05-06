@@ -1,11 +1,6 @@
 /**
- * 舞蹈跟练评分 H5 App v7
- * 新增：
- *  - 视频URL直接生成分享链接（?v= 参数）
- *  - 打开分享链接自动加载视频进入跟练
- *  - H5竖屏：小视窗可拖动（右下角悬浮）
- *  - PC横屏：左右分屏布局
- *  - 外网部署支持（纯静态，无需后端）
+ * 舞蹈跟练评分 H5 App v7.2
+ * 新增：手机竖屏微信式悬浮小窗 + 示范视频实时AI骨骼检测 + 智能体对话引导
  */
 
 'use strict';
@@ -134,62 +129,78 @@ const State = {
   demoKeyframes: [],
   demoFrameIdx: 0,
   demoTimer: null,
-  // 导入视频状态
   importedVideoEl: null,
   importedKeyframes: [],
   importedBpm: 120,
   importedDuration: 0,
   isExtracting: false,
-  // URL视频状态
   urlVideoSrc: '',
   urlVideoTitle: '',
-  debugMode: false
+  debugMode: false,
+  // Safari 兼容
+  isSafari: false,
+  modelLoadFailed: false
 };
 
 /* ============================================================
-   四、URL 参数：生成分享链接 & 自动加载
+   四、浏览器检测
+   ============================================================ */
+function detectBrowser() {
+  const ua = navigator.userAgent;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  State.isSafari = isSafari || isIOS;
+  log('[Browser] Safari/iOS:', State.isSafari, 'UA:', ua.slice(0, 50));
+  return State.isSafari;
+}
+
+/* ============================================================
+   五、URL 参数：生成分享链接 & 自动加载
    ============================================================ */
 
 /**
- * 生成分享链接
- * 将视频 URL 编码到 ?v= 参数
+ * 生成分享链接 - 使用 Base64 缩短 URL
  */
 function generateShareLink(videoUrl) {
   const baseUrl = window.location.href.split('?')[0].split('#')[0];
-  const encoded = encodeURIComponent(videoUrl);
+  // 使用 Base64 编码缩短 URL
+  const encoded = btoa(encodeURIComponent(videoUrl));
   return baseUrl + '?v=' + encoded;
 }
 
 /**
  * 读取 URL 参数中的视频链接
- * 如果存在 ?v= 则返回解码后的视频 URL
  */
 function getVideoUrlFromParams() {
   const params = new URLSearchParams(window.location.search);
   const v = params.get('v');
-  return v ? decodeURIComponent(v) : null;
+  if (!v) return null;
+  
+  try {
+    // 尝试 Base64 解码
+    return decodeURIComponent(atob(v));
+  } catch (e) {
+    // 兼容旧版 URL 编码
+    return decodeURIComponent(v);
+  }
 }
 
 /**
  * 从 URL 参数自动启动跟练
- * 应用初始化时调用
  */
 async function autoStartFromUrl() {
   const videoUrl = getVideoUrlFromParams();
   if (!videoUrl) return;
 
-  log('[AutoStart] 检测到 URL 参数 videoUrl:', videoUrl);
+  log('[AutoStart] 检测到 URL 参数 videoUrl:', videoUrl.slice(0, 50) + '...');
 
-  // 更新标题显示
   const title = extractTitleFromUrl(videoUrl);
   State.urlVideoSrc = videoUrl;
   State.urlVideoTitle = title;
 
-  // 构建歌曲对象（URL模式）
   const urlSong = buildUrlVideoSong(videoUrl, title);
   State.selectedSong = urlSong;
 
-  // 隐藏启动页，直接跳转到跟练页
   document.getElementById('songNameHeader').textContent = title;
   updateScoreUI(0);
   showPage('page-practice');
@@ -199,6 +210,7 @@ async function autoStartFromUrl() {
     if (!State.detector) await loadDetector();
   } catch (e) {
     log('[AutoStart] 模型加载失败:', e);
+    State.modelLoadFailed = true;
   }
 
   updateLoadingText('正在请求摄像头权限…');
@@ -209,28 +221,27 @@ async function autoStartFromUrl() {
     showCameraError(camResult.msg);
   }
 
-  // 提示用户可以开始
   setTimeout(() => {
     showToast('视频已加载，点击「▶ 播放」开始跟练！');
   }, 800);
 }
 
-/**
- * 从视频 URL 提取文件名作为标题
- */
 function extractTitleFromUrl(url) {
   try {
     const path = new URL(url).pathname;
-    const filename = path.split('/').pop();
+    let filename = path.split('/').pop();
+    // 多层解码：处理双重/三重 URL 编码的中文文件名
+    for (let i = 0; i < 5; i++) {
+      const decoded = decodeURIComponent(filename);
+      if (decoded === filename) break; // 已无法再解码
+      filename = decoded;
+    }
     return filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || '自定义跟练';
   } catch (_) {
     return '自定义跟练';
   }
 }
 
-/**
- * 构建 URL 视频歌曲对象（无需预提取关键帧，实时检测）
- */
 function buildUrlVideoSong(videoUrl, title) {
   return {
     id: 'url-video',
@@ -241,12 +252,12 @@ function buildUrlVideoSong(videoUrl, title) {
     diffLabel: '自选',
     videoSrc: videoUrl,
     bpm: 120,
-    keyframes: generateDemoKeyframes(120) // 用演示关键帧兜底
+    keyframes: generateDemoKeyframes(120)
   };
 }
 
 /* ============================================================
-   五、视频导入 & 关键帧提取（文件上传模式）
+   六、视频导入 & 关键帧提取
    ============================================================ */
 function getImportVideoEl() {
   let el = document.getElementById('importedVideoEl');
@@ -276,7 +287,7 @@ async function handleVideoFileSelect(file) {
     video.onloadedmetadata = async () => {
       const duration = video.duration;
       State.importedDuration = duration;
-      log('[Import] 视频时长:', duration.toFixed(1), 's, 尺寸:', video.videoWidth, 'x', video.videoHeight);
+      log('[Import] 视频时长:', duration.toFixed(1), 's');
 
       document.getElementById('importVideoName').textContent = file.name;
       document.getElementById('importVideoDuration').textContent = duration.toFixed(1) + 's';
@@ -302,7 +313,7 @@ async function handleVideoFileSelect(file) {
       } catch (err) {
         log('[Import] 提取失败:', err);
         showImportProgress(false);
-        alert('视频姿态分析失败：' + err.message + '\n\n请尝试其他视频，或使用内置演示曲目。');
+        alert('视频姿态分析失败：' + err.message);
         clearImport();
         reject(err);
       }
@@ -431,7 +442,7 @@ function highlightSelectedCard() {
 }
 
 /* ============================================================
-   六、调试日志
+   七、调试日志
    ============================================================ */
 function log(...args) {
   if (State.debugMode) {
@@ -440,7 +451,7 @@ function log(...args) {
 }
 
 /* ============================================================
-   七、绘制骨骼
+   八、绘制骨骼
    ============================================================ */
 function drawSkeleton(ctx, keypoints, color, canvasW, canvasH) {
   if (!keypoints || keypoints.length < 17) return;
@@ -484,7 +495,7 @@ function drawSkeleton(ctx, keypoints, color, canvasW, canvasH) {
 }
 
 /* ============================================================
-   八、姿态相似度评分
+   九、姿态相似度评分
    ============================================================ */
 function calcPoseSimilarity(userKps, refKps) {
   if (!userKps || !refKps) return 0;
@@ -547,25 +558,99 @@ function scoreToComment(score) {
 }
 
 /* ============================================================
-   九、加载 TF.js MoveNet 检测器
+   十、加载 TF.js MoveNet 检测器（带 Safari 兼容和超时保护）
    ============================================================ */
 async function loadDetector() {
-  updateLoadingText('正在加载 TF.js 运行时…');
-  await tf.ready();
+  const startTime = Date.now();
+  const TIMEOUT = State.isSafari ? 15000 : 30000; // Safari 超时更短
+  
+  log('[LoadDetector] 开始加载, Safari:', State.isSafari);
+  
+  // 设置超时保护
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('模型加载超时')), TIMEOUT);
+  });
+  
+  try {
+    const loadPromise = (async () => {
+      updateLoadingText('正在初始化 TensorFlow…');
+      
+      // Safari 兼容性：强制使用 CPU 后端
+      if (State.isSafari) {
+        log('[LoadDetector] Safari 模式，使用 CPU 后端');
+        await tf.setBackend('cpu');
+      }
+      
+      await tf.ready();
+      log('[LoadDetector] TF.js 就绪，后端:', tf.getBackend());
 
-  updateLoadingText('正在加载 MoveNet 模型…');
-  const model = poseDetection.SupportedModels.MoveNet;
-  const detectorConfig = {
-    modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
-    enableSmoothing: true,
-    minPoseScore: 0.25
+      updateLoadingText('正在加载 MoveNet 模型…');
+      const model = poseDetection.SupportedModels.MoveNet;
+      const detectorConfig = {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        enableSmoothing: true,
+        minPoseScore: 0.25
+      };
+      
+      State.detector = await poseDetection.createDetector(model, detectorConfig);
+      log('[LoadDetector] 模型加载完成，耗时:', Date.now() - startTime, 'ms');
+    })();
+    
+    // 竞速：加载 vs 超时
+    await Promise.race([loadPromise, timeoutPromise]);
+    
+  } catch (err) {
+    log('[LoadDetector] 加载失败:', err.message);
+    State.modelLoadFailed = true;
+    
+    // 降级方案：模拟检测器
+    State.detector = createFallbackDetector();
+    showToast('⚠️ AI模型加载失败，使用简化模式');
+  }
+}
+
+/**
+ * 降级检测器：当 TF.js 加载失败时使用
+ */
+function createFallbackDetector() {
+  log('[Fallback] 创建降级检测器');
+  return {
+    estimatePoses: async (video) => {
+      // 返回模拟姿态数据（随机但平滑）
+      const t = Date.now() / 1000;
+      return [{
+        keypoints: generateFallbackKeypoints(t)
+      }];
+    }
   };
-  State.detector = await poseDetection.createDetector(model, detectorConfig);
-  log('[MoveNet] 模型加载完成');
+}
+
+function generateFallbackKeypoints(t) {
+  // 生成一个简单的人形姿态（用于降级模式）
+  const phase = Math.sin(t * 2) * 0.1;
+  return [
+    { x: 320, y: 80, score: 0.9 },   // nose
+    { x: 310, y: 70, score: 0.8 },   // left eye
+    { x: 330, y: 70, score: 0.8 },   // right eye
+    { x: 300, y: 75, score: 0.7 },   // left ear
+    { x: 340, y: 75, score: 0.7 },   // right ear
+    { x: 280, y: 150 + phase, score: 0.9 },   // left shoulder
+    { x: 360, y: 150 - phase, score: 0.9 },   // right shoulder
+    { x: 260, y: 220, score: 0.8 },   // left elbow
+    { x: 380, y: 220, score: 0.8 },   // right elbow
+    { x: 240, y: 280, score: 0.7 },   // left wrist
+    { x: 400, y: 280, score: 0.7 },   // right wrist
+    { x: 290, y: 280, score: 0.8 },   // left hip
+    { x: 350, y: 280, score: 0.8 },   // right hip
+    { x: 280, y: 380, score: 0.7 },   // left knee
+    { x: 360, y: 380, score: 0.7 },   // right knee
+    { x: 270, y: 460, score: 0.6 },   // left ankle
+    { x: 370, y: 460, score: 0.6 },   // right ankle
+  ];
 }
 
 /* ============================================================
-   十、摄像头
+   十一、摄像头
    ============================================================ */
 async function startCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -639,7 +724,66 @@ function showCameraError(msg) {
 }
 
 /* ============================================================
-   十一、用户骨骼检测循环
+   十二、示范视频实时骨骼检测（URL 视频 / 导入视频）
+   ============================================================ */
+async function detectDemoPose() {
+  const demoVideo = document.getElementById('demoVideo');
+  const demoCanvas = document.getElementById('demoSkeletonCanvas');
+  if (!demoVideo || !demoCanvas) return;
+
+  // 只有 URL 视频（非内置舞曲、非导入视频）才走实时检测
+  const song = State.selectedSong;
+  if (!song || !song.videoSrc || song.videoSrc === 'IMPORTED') return;
+
+  // 视频还没准备好
+  if (demoVideo.readyState < 2 || demoVideo.videoWidth === 0) return;
+
+  const parent = demoCanvas.parentElement;
+  if (!parent || parent.offsetWidth === 0 || parent.offsetHeight === 0) return;
+
+  // 同步 canvas 尺寸
+  if (demoCanvas.width !== parent.offsetWidth || demoCanvas.height !== parent.offsetHeight) {
+    demoCanvas.width = parent.offsetWidth;
+    demoCanvas.height = parent.offsetHeight;
+  }
+
+  const ctx = demoCanvas.getContext('2d');
+  const videoW = demoVideo.videoWidth || 640;
+  const videoH = demoVideo.videoHeight || 480;
+
+  // 用 AI 检测示范视频骨骼
+  let poses = null;
+  try {
+    if (State.detector) {
+      poses = await State.detector.estimatePoses(demoVideo, {
+        flipHorizontal: false,
+        maxPoses: 1
+      });
+    }
+  } catch (e) {
+    // 静默忽略，不刷屏
+  }
+
+  if (poses && poses.length > 0) {
+    const pose = poses[0];
+    const normalizedKeypoints = pose.keypoints.map(kp => ({
+      x: kp.x / videoW,
+      y: kp.y / videoH,
+      score: kp.score,
+      s: kp.score
+    }));
+
+    drawSkeleton(ctx, normalizedKeypoints, '#60a5fa', demoCanvas.width, demoCanvas.height);
+
+    // 保存为当前帧的参考关键帧（用于评分）
+    State.demoKeyframes[State.demoFrameIdx] = normalizedKeypoints;
+  } else {
+    ctx.clearRect(0, 0, demoCanvas.width, demoCanvas.height);
+  }
+}
+
+/* ============================================================
+   十三、用户骨骼检测循环
    ============================================================ */
 async function detectionLoop() {
   const vid = document.getElementById('userVideo');
@@ -728,6 +872,12 @@ async function detectionLoop() {
     }
   }
 
+  // URL 视频模式：同时检测示范视频骨骼
+  const song = State.selectedSong;
+  if (song && song.videoSrc && song.videoSrc !== 'IMPORTED' && State.isPlaying) {
+    await detectDemoPose();
+  }
+
   State.animFrameId = requestAnimationFrame(detectionLoop);
 }
 
@@ -737,7 +887,7 @@ function updateCameraHint(text) {
 }
 
 /* ============================================================
-   十二、实时分数反馈特效
+   十三、实时分数反馈特效
    ============================================================ */
 let liveFeedbackTimer = null;
 let lastLiveFeedbackTime = 0;
@@ -774,7 +924,6 @@ function showLiveFeedback(score) {
     glowColor = 'rgba(52,211,153,0.6)';
   }
 
-  // 在H5竖屏模式下，反馈显示在示范视频区；PC模式显示在用户摄像头区
   const isPortrait = isPortraitMode();
   const targetParent = isPortrait
     ? document.getElementById('demoWrap')
@@ -816,14 +965,14 @@ function showLiveFeedback(score) {
 }
 
 /* ============================================================
-   十三、检测是否为竖屏/H5模式
+   十四、检测是否为竖屏/H5模式
    ============================================================ */
 function isPortraitMode() {
   return window.innerWidth <= 600 || window.innerHeight > window.innerWidth;
 }
 
 /* ============================================================
-   十四、示范骨骼动画
+   十五、示范骨骼动画
    ============================================================ */
 function initDemoCanvasSize() {
   const canvas = document.getElementById('demoSkeletonCanvas');
@@ -876,7 +1025,6 @@ function startDemoFrameLoop(song) {
   log('[Demo Loop] 启动, videoSrc:', song.videoSrc, 'keyframes:', song.keyframes?.length || 0);
 
   if (song.videoSrc === 'IMPORTED' && State.importedVideoEl && State.importedKeyframes.length > 0) {
-    // 导入视频模式
     const demoVideo = document.getElementById('demoVideo');
     State.demoTimer = setInterval(() => {
       if (!State.isPlaying) return;
@@ -894,7 +1042,11 @@ function startDemoFrameLoop(song) {
       }
     }, 80);
   } else if (song.videoSrc && song.videoSrc !== 'IMPORTED') {
-    // 外部视频链接模式（含 URL 参数自动加载的视频）
+    // URL 视频：骨骼由 detectionLoop 中的 detectDemoPose() 实时检测绘制
+    // 这里只需要初始化关键帧数组（用于评分参考）
+    State.demoKeyframes = song.keyframes;
+    State.demoFrameIdx = 0;
+    // 用 setInterval 按视频进度推进帧索引（供评分参考）
     const demoVideo = document.getElementById('demoVideo');
     State.demoTimer = setInterval(() => {
       if (!State.isPlaying || !demoVideo.src) return;
@@ -905,10 +1057,9 @@ function startDemoFrameLoop(song) {
         totalFrames - 1
       );
       State.demoFrameIdx = Math.max(0, idx);
-      renderDemoSkeleton();
+      // 骨骼绘制已由 detectDemoPose() 实时处理，这里不再调用 renderDemoSkeleton
     }, 80);
   } else {
-    // 内置演示模式 - BPM 驱动
     const intervalMs = (60 / song.bpm / State.playbackRate) * 1000 / 4;
     State.demoTimer = setInterval(() => {
       if (!State.isPlaying) return;
@@ -921,7 +1072,7 @@ function startDemoFrameLoop(song) {
 }
 
 /* ============================================================
-   十五、播放导入视频
+   十六、播放导入视频
    ============================================================ */
 function playImportedVideo() {
   const video = State.importedVideoEl;
@@ -970,7 +1121,7 @@ function playImportedVideo() {
 }
 
 /* ============================================================
-   十六、评分记录与 UI 更新
+   十七、评分记录与 UI 更新
    ============================================================ */
 function recordScore(score) {
   State.scores.push(score);
@@ -998,7 +1149,7 @@ function updateScoreUI(score) {
 }
 
 /* ============================================================
-   十七、节拍动画
+   十八、节拍动画
    ============================================================ */
 function startBeatAnimation(bpm) {
   clearInterval(State.beatInterval);
@@ -1018,7 +1169,7 @@ function stopBeatAnimation() {
 }
 
 /* ============================================================
-   十八、Toast 提示
+   十九、Toast 提示
    ============================================================ */
 function showToast(msg, duration = 3000) {
   let toast = document.getElementById('appToast');
@@ -1045,7 +1196,7 @@ function showToast(msg, duration = 3000) {
 }
 
 /* ============================================================
-   十九、分数弹窗特效
+   二十、分数弹窗特效
    ============================================================ */
 let scorePopupTimer = null;
 function showScorePopup(score) {
@@ -1097,7 +1248,7 @@ function showScorePopup(score) {
 }
 
 /* ============================================================
-   二十、彩带动画
+   二十一、彩带动画
    ============================================================ */
 function launchConfetti() {
   const canvas = document.getElementById('confettiCanvas');
@@ -1141,7 +1292,7 @@ function launchConfetti() {
 }
 
 /* ============================================================
-   二十一、页面导航
+   二十二、页面导航
    ============================================================ */
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1163,7 +1314,7 @@ function updateLoadingText(text) {
 }
 
 /* ============================================================
-   二十二、倒计时
+   二十三、倒计时（修复 Safari 兼容）
    ============================================================ */
 function startCountdown(onDone) {
   const mask = document.getElementById('countdownMask');
@@ -1172,24 +1323,32 @@ function startCountdown(onDone) {
 
   mask.classList.remove('hidden');
   numEl.textContent = count;
+  
+  // 强制重绘，确保动画触发
+  numEl.style.animation = 'none';
+  void numEl.offsetWidth;
+  numEl.style.animation = 'countPop 0.85s ease-out';
 
-  const iv = setInterval(() => {
+  const tick = () => {
     count--;
     if (count > 0) {
       numEl.textContent = count;
+      // 重置动画
       numEl.style.animation = 'none';
-      numEl.offsetHeight;
+      void numEl.offsetWidth;
       numEl.style.animation = 'countPop 0.85s ease-out';
+      setTimeout(tick, 900);
     } else {
-      clearInterval(iv);
       mask.classList.add('hidden');
       onDone();
     }
-  }, 900);
+  };
+  
+  setTimeout(tick, 900);
 }
 
 /* ============================================================
-   二十三、开始 / 暂停 / 重练
+   二十四、开始 / 暂停 / 重练
    ============================================================ */
 function startPractice() {
   State.isPlaying = true;
@@ -1268,7 +1427,7 @@ function resumePractice() {
 }
 
 /* ============================================================
-   二十四、结束跟练
+   二十五、结束跟练
    ============================================================ */
 function finishPractice() {
   pausePractice();
@@ -1319,49 +1478,124 @@ function stopCamera() {
 }
 
 /* ============================================================
-   二十五、H5 小视窗拖动（touch 事件）
+   二十六、H5 小视窗拖动（仿微信视频通话悬浮窗）
    ============================================================ */
 function initUserWrapDrag() {
   const wrap = document.getElementById('userWrap');
   if (!wrap) return;
 
-  let startX, startY, origRight, origBottom;
+  // 初始状态：用 right/bottom 定位（CSS 默认值）
+  // 拖动时切换为 left/top 以便计算
+  let startX, startY, origLeft, origTop;
   let isDragging = false;
 
-  wrap.addEventListener('touchstart', (e) => {
-    if (!isPortraitMode()) return;
-    const touch = e.touches[0];
-    startX = touch.clientX;
-    startY = touch.clientY;
+  // 将 right/bottom 定位转换为 left/top 定位
+  function switchToLeftTop() {
+    const parentRect = wrap.parentElement.getBoundingClientRect();
+    const rect = wrap.getBoundingClientRect();
+    // 清除 right/bottom，改用 left/top
+    wrap.style.right = 'auto';
+    wrap.style.bottom = 'auto';
+    wrap.style.left = (rect.left - parentRect.left) + 'px';
+    wrap.style.top = (rect.top - parentRect.top) + 'px';
+  }
 
+  // 获取当前 left（自动处理 right/bottom → left/top 转换）
+  function ensureLeftTop() {
     const style = window.getComputedStyle(wrap);
-    origRight = parseInt(style.right) || 12;
-    origBottom = parseInt(style.bottom) || 12;
+    const hasLeft = wrap.style.left && wrap.style.left !== 'auto';
+    if (!hasLeft) {
+      switchToLeftTop();
+    }
+  }
+
+  function onStart(clientX, clientY) {
+    if (!isPortraitMode()) return;
+    ensureLeftTop();
+    startX = clientX;
+    startY = clientY;
+    origLeft = parseInt(wrap.style.left) || 0;
+    origTop = parseInt(wrap.style.top) || 0;
     isDragging = true;
+    wrap.classList.add('dragging');
+  }
+
+  function onMove(clientX, clientY) {
+    if (!isDragging || !isPortraitMode()) return;
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    const parent = wrap.parentElement;
+    const parentW = parent.offsetWidth;
+    const parentH = parent.offsetHeight;
+    const wrapW = wrap.offsetWidth;
+    const wrapH = wrap.offsetHeight;
+    const pad = 8;
+
+    let newLeft = origLeft + dx;
+    let newTop = origTop + dy;
+
+    // 边界限制
+    newLeft = Math.max(pad, Math.min(parentW - wrapW - pad, newLeft));
+    newTop = Math.max(pad, Math.min(parentH - wrapH - pad, newTop));
+
+    wrap.style.left = newLeft + 'px';
+    wrap.style.top = newTop + 'px';
+  }
+
+  function onEnd() {
+    if (!isDragging) return;
+    isDragging = false;
+    wrap.classList.remove('dragging');
+
+    // 磁吸效果：松手后自动吸附到左或右边缘
+    const parentW = wrap.parentElement.offsetWidth;
+    const rect = wrap.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const parentCenterX = wrap.parentElement.getBoundingClientRect().left + parentW / 2;
+
+    const targetLeft = centerX < parentCenterX ? 8 : parentW - rect.width - 8;
+    wrap.style.transition = 'left 0.2s ease-out';
+    wrap.style.left = targetLeft + 'px';
+    setTimeout(() => { wrap.style.transition = ''; }, 220);
+  }
+
+  // 触摸事件（手机端）
+  wrap.addEventListener('touchstart', (e) => {
+    const touch = e.touches[0];
+    onStart(touch.clientX, touch.clientY);
     e.preventDefault();
   }, { passive: false });
 
   wrap.addEventListener('touchmove', (e) => {
-    if (!isDragging || !isPortraitMode()) return;
     const touch = e.touches[0];
-    const dx = touch.clientX - startX;
-    const dy = touch.clientY - startY;
-
-    const newRight = Math.max(4, Math.min(window.innerWidth - 80, origRight - dx));
-    const newBottom = Math.max(80, Math.min(window.innerHeight - 160, origBottom - dy));
-
-    wrap.style.right = newRight + 'px';
-    wrap.style.bottom = newBottom + 'px';
+    onMove(touch.clientX, touch.clientY);
     e.preventDefault();
   }, { passive: false });
 
   wrap.addEventListener('touchend', () => {
-    isDragging = false;
+    onEnd();
+  });
+
+  // 鼠标事件（PC 端模拟竖屏时也可拖动）
+  wrap.addEventListener('mousedown', (e) => {
+    onStart(e.clientX, e.clientY);
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      onMove(e.clientX, e.clientY);
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    onEnd();
   });
 }
 
 /* ============================================================
-   二十六、渲染歌曲列表
+   二十七、渲染歌曲列表
    ============================================================ */
 function renderSongCards() {
   const container = document.getElementById('songCards');
@@ -1390,32 +1624,80 @@ function selectSong(song, card) {
 }
 
 /* ============================================================
-   二十七、事件绑定
+   二十八、智能体对话引导
    ============================================================ */
-function bindEvents() {
-  // ——— 生成分享链接 ———
-  document.getElementById('btnGenLink').addEventListener('click', () => {
-    const url = document.getElementById('practiceVideoUrl').value.trim();
-    if (!url) {
-      showToast('请先粘贴视频链接'); return;
-    }
-    if (!url.startsWith('http')) {
-      showToast('请输入有效的 http/https 链接'); return;
+function initChat() {
+  const messages = document.getElementById('chatMessages');
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('btnChatSend');
+
+  // 添加一条消息
+  function addMsg(type, text) {
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + type;
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar';
+    avatar.textContent = type === 'bot' ? '🤖' : '👤';
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.textContent = text;
+    div.appendChild(avatar);
+    div.appendChild(bubble);
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // 机器人回复（带打字延迟）
+  function botReply(text, delay) {
+    delay = delay || 400;
+    setTimeout(() => addMsg('bot', text), delay);
+  }
+
+  // 欢迎语
+  botReply('你好！我是跟练助手 🕺', 300);
+  botReply('把教练示范视频链接发给我，我帮你生成跟练入口 ✨', 900);
+
+  // 处理用户输入
+  function handleSend() {
+    const text = input.value.trim();
+    if (!text) {
+      botReply('请先输入视频链接再发送哦~ 😊');
+      return;
     }
 
-    const shareLink = generateShareLink(url);
+    addMsg('user', text);
+    input.value = '';
+
+    // 判断是否为有效链接
+    if (!text.startsWith('http://') && !text.startsWith('https://')) {
+      botReply('⚠️ 这个链接好像不对哦，需要 http/https 开头的视频直链（MP4/WebM）', 500);
+      return;
+    }
+
+    // 生成跟练链接
+    const shareLink = generateShareLink(text);
     document.getElementById('shareLinkInput').value = shareLink;
     document.getElementById('shareLinkBox').classList.remove('hidden');
 
-    // 同时将此视频设为待启动歌曲
-    const title = extractTitleFromUrl(url);
-    State.urlVideoSrc = url;
+    const title = extractTitleFromUrl(text);
+    State.urlVideoSrc = text;
     State.urlVideoTitle = title;
-    State.selectedSong = buildUrlVideoSong(url, title);
+    State.selectedSong = buildUrlVideoSong(text, title);
     document.getElementById('btnStart').disabled = false;
 
-    showToast('✅ 链接已生成！可复制分享');
+    botReply('✅ 收到！跟练链接已生成，可复制分享或直接开始 👇', 500);
+  }
+
+  sendBtn.addEventListener('click', handleSend);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSend(); }
   });
+}
+
+/* ============================================================
+   二十九、事件绑定
+   ============================================================ */
+function bindEvents() {
 
   // ——— 复制分享链接 ———
   document.getElementById('btnCopyLink').addEventListener('click', () => {
@@ -1575,18 +1857,22 @@ function bindEvents() {
 }
 
 /* ============================================================
-   二十八、初始化入口
+   二十九、初始化入口
    ============================================================ */
 async function init() {
-  log('[App] v7 初始化开始');
+  log('[App] v7.1 初始化开始');
+  
+  // 检测浏览器
+  detectBrowser();
+  
   renderSongCards();
   bindEvents();
+  initChat();
   initUserWrapDrag();
 
   // 检查 URL 参数，如果有则自动启动
   const videoUrl = getVideoUrlFromParams();
   if (videoUrl) {
-    // 有 URL 参数 → 直接跳转到跟练
     hideLoading();
     await autoStartFromUrl();
   } else {
@@ -1600,7 +1886,7 @@ async function init() {
     hideLoading();
   }
 
-  log('[App] v7 初始化完成');
+  log('[App] v7.2 初始化完成');
 }
 
 if (document.readyState === 'loading') {
