@@ -45,40 +45,107 @@ html, body {
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .app-subtitle { font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 6px; }
 
-/* ===== 视频URL输入区 ===== */
-.url-input-section {
-  background: rgba(255,255,255,0.05);
-  border: 1.5px solid rgba(167,139,250,0.3);
+/* 智能体对话引导区 */
+.chat-section {
+  background: rgba(255,255,255,0.04);
+  border: 1.5px solid rgba(167,139,250,0.25);
   border-radius: 16px;
-  padding: 16px;
+  padding: 0;
   margin-bottom: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
 }
-.url-input-label {
-  font-size: 13px; font-weight: 600;
-  color: rgba(167,139,250,0.9);
-  margin-bottom: 10px;
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167,139,250,0.2) transparent;
 }
-.url-input-row { display: flex; gap: 8px; }
-.url-input {
-  flex: 1; padding: 10px 12px;
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: rgba(167,139,250,0.2); border-radius: 4px; }
+
+/* 消息气泡 */
+.chat-msg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  animation: chatFadeIn 0.3s ease-out;
+}
+@keyframes chatFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.chat-msg.bot { flex-direction: row; }
+.chat-msg.user { flex-direction: row-reverse; }
+
+.chat-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.chat-msg.bot .chat-avatar {
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  box-shadow: 0 2px 8px rgba(124,58,237,0.3);
+}
+.chat-msg.user .chat-avatar {
+  background: rgba(255,255,255,0.12);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.chat-bubble {
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.chat-msg.bot .chat-bubble {
+  background: rgba(124,58,237,0.15);
+  color: rgba(255,255,255,0.9);
+  border-bottom-left-radius: 4px;
+}
+.chat-msg.user .chat-bubble {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.85);
+  border-bottom-right-radius: 4px;
+}
+
+/* 输入区 */
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.15);
+}
+.chat-input {
+  flex: 1; padding: 9px 12px;
   background: rgba(255,255,255,0.07);
-  border: 1.5px solid rgba(255,255,255,0.12);
-  border-radius: 10px;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
   color: #fff; font-size: 12px; outline: none;
   transition: border-color 0.2s;
 }
-.url-input:focus { border-color: #a78bfa; }
-.url-input::placeholder { color: rgba(255,255,255,0.25); }
-.url-gen-btn {
-  background: linear-gradient(90deg, #7c3aed, #2563eb);
-  border: none; border-radius: 10px;
+.chat-input:focus { border-color: #a78bfa; }
+.chat-input::placeholder { color: rgba(255,255,255,0.3); }
+.chat-send-btn {
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  border: none; border-radius: 20px;
   color: #fff; font-size: 12px; font-weight: 600;
-  padding: 10px 14px; cursor: pointer;
+  padding: 9px 16px; cursor: pointer;
   white-space: nowrap; transition: all 0.15s;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.3);
+  box-shadow: 0 2px 10px rgba(124,58,237,0.3);
 }
-.url-gen-btn:active { transform: scale(0.96); }
-.url-input-hint { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 6px; }
+.chat-send-btn:active { transform: scale(0.95); }
 
 /* 分享链接框 */
 .share-link-box {
@@ -123,7 +190,7 @@ html, body {
 /* 歌曲卡片 */
 .song-cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; }
 
-/* ===== 视频导入 ===== */
+/* 视频导入 */
 .import-section { margin-top: 12px; }
 .import-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -209,7 +276,7 @@ html, body {
 
 /* ===== 跟练页 ===== */
 #page-practice {
-  background: #080810;
+  background: #000;
   overflow: hidden;
 }
 .practice-header {
@@ -218,6 +285,7 @@ html, body {
   background: rgba(0,0,0,0.6);
   backdrop-filter: blur(10px);
   flex-shrink: 0; z-index: 10;
+  position: relative;
 }
 .btn-back {
   background: none; border: none; color: rgba(255,255,255,0.7);
@@ -295,62 +363,135 @@ html, body {
 }
 
 /* ===================================================
-   H5 竖屏布局：全屏示范 + 右下角小视窗
+   H5 竖屏布局：教练全屏铺底 + 微信式悬浮小窗
    =================================================== */
 @media (max-width: 600px), (orientation: portrait) {
   .video-area {
     padding: 0;
     gap: 0;
+    position: relative;
   }
 
-  /* 示范视频：铺满整个视频区 */
+  /* 示范视频：铺满整个屏幕（全屏底图） */
   .demo-wrap {
-    flex: none;
     position: absolute;
     inset: 0;
     border-radius: 0;
     aspect-ratio: unset;
     max-height: unset;
     z-index: 1;
+    width: 100%;
+    height: 100%;
+    flex: none;
   }
 
-  /* 用户摄像头：右下角小视窗，类似微信悬浮窗 */
+  /* 示范视频铺满 */
+  .demo-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* 用户摄像头：微信式悬浮小窗 */
   .user-wrap {
-    flex: none;
     position: absolute;
-    right: 12px;
-    bottom: 12px;
-    width: 28vw;
-    max-width: 120px;
+    width: 32vw;
+    max-width: 140px;
+    min-width: 90px;
+    height: auto;
     aspect-ratio: 3/4;
-    border-radius: 14px;
-    border: 2px solid rgba(167,139,250,0.6);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
-    z-index: 20;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.6);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    z-index: 100;
     cursor: grab;
-    /* 小视窗不占 flex 空间，不影响全屏背景 */
+    overflow: hidden;
+    flex: none;
+    /* 默认位置：右下角 */
+    right: 12px;
+    bottom: 80px;
+    left: auto;
+    top: auto;
   }
   .user-wrap:active { cursor: grabbing; }
 
-  /* 隐藏小视窗内部标签，空间太小 */
-  .user-wrap .user-label { display: none; }
-  .user-wrap .camera-hint { font-size: 9px; padding: 2px 6px; }
+  /* 小窗拖动把手（微信风格） */
+  .user-drag-handle {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 20px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.45) 0%, transparent 100%);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+  }
+  .user-drag-handle::after {
+    content: '';
+    width: 20px; height: 3px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.55);
+  }
 
-  /* 分数条 & 控制栏覆盖在视频上方 */
-  .score-bar-area {
-    position: relative;
-    z-index: 15;
+  /* 小窗拖动中效果 */
+  .user-wrap.dragging {
+    opacity: 0.88;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7), 0 0 0 2px rgba(7,193,96,0.5);
+    transform: scale(1.05);
+    transition: none;
+  }
+
+  /* 隐藏小视窗内部标签（空间太小） */
+  .user-wrap .user-label { display: none; }
+  .user-wrap .camera-hint {
+    font-size: 9px;
+    padding: 1px 5px;
+    bottom: 3px;
+    left: 3px;
+    top: auto;
+    transform: none;
     background: rgba(0,0,0,0.55);
+    border-radius: 4px;
+  }
+
+  /* 头部栏覆盖在视频上方 */
+  .practice-header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
     backdrop-filter: blur(6px);
   }
-  .beat-row {
-    position: relative; z-index: 15;
-    background: rgba(0,0,0,0.4);
+
+  /* 分数条覆盖在视频上方 */
+  .score-bar-area {
+    position: absolute;
+    bottom: 76px;
+    left: 0; right: 0;
+    z-index: 50;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(6px);
   }
+
+  /* 节拍动画行 */
+  .beat-row {
+    position: absolute;
+    bottom: 52px;
+    left: 0; right: 0;
+    z-index: 50;
+    background: rgba(0,0,0,0.35);
+  }
+
+  /* 控制栏覆盖在底部 */
   .ctrl-bar {
-    position: relative; z-index: 15;
-    background: rgba(0,0,0,0.65);
+    position: absolute;
+    bottom: 0;
+    left: 0; right: 0;
+    z-index: 50;
+    background: rgba(0,0,0,0.7);
     backdrop-filter: blur(10px);
+    padding-bottom: env(safe-area-inset-bottom, 12px);
   }
 }
 
@@ -545,5 +686,4 @@ html, body {
   .logo-icon { font-size: 44px; }
   .app-title { font-size: 22px; }
   .start-content { max-width: 100%; }
-  .dance-list { margin-bottom: 16px; }
 }
